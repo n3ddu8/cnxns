@@ -135,7 +135,8 @@ def dbms_reader(
     query = kwargs.get("query", None)
     table_name = kwargs.get("table_name", None)
     schema = kwargs.get("schema", "dbo")
-    columns = kwargs.get(",".join("columns"), "*")
+    val = kwargs.get("columns")
+    columns = ",".join(val) if isinstance(val, list) else "*"
 
     chunk = dbms_read_chunks(
         cnxn,
@@ -180,7 +181,8 @@ def dbms_read_chunks(
     query = kwargs.get("query", None)
     table_name = kwargs.get("table_name", None)
     schema = kwargs.get("schema", "dbo")
-    columns = kwargs.get("columns", "*")
+    val = kwargs.get("columns")
+    columns = ",".join(val) if isinstance(val, list) else "*"
     chunksize = kwargs.get("chunksize", None)
 
     if not query:

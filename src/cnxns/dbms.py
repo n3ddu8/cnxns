@@ -3,10 +3,7 @@ from typing import Generator
 
 import pandas as pd
 import sqlalchemy as sa
-from bcpandas import SqlCreds
-from bcpandas import to_sql
 from pandas import DataFrame
-from pandas.core.groupby.groupby import DataError
 from sqlalchemy import Engine
 from sqlalchemy.engine.base import Connection
 
@@ -40,25 +37,34 @@ def dbms_cnxn(
             Default = ODBC Driver 18 for SQL Server.
         **database (String): name of the database, if connecting to a specific
             database on the server instance. Default = no database.
+        **trust (Boolean): Trust the server certificate. Default = False.
 
     Returns:
         Engine: A SQLAlchemy Engine object.
     """
 
+    port = kwargs.get("port", None)
     driver = kwargs.get("driver", "ODBC Driver 18 for SQL Server")
     database = kwargs.get("database", "")
+    trust = kwargs.get("trust", False)
 
     match dbms:
 
         case "mssql":
 
+            if not port:
+                port = 1433
+
+            trust_str = "Yes" if trust else "No"
+
             cnxn_str = (
                 f"DRIVER={driver};"
-                f"SERVER={server};"
+                f"SERVER={server},{port};"
                 f"UID={uid};"
                 f"PWD={pwd};"
                 f"DATABASE={database};"
                 f"MARS_Connection=Yes;"
+                f"TrustServerCertificate={trust_str};"
             )
 
             quoted_cnxn_str = urllib.parse.quote_plus(cnxn_str)
@@ -72,10 +78,19 @@ def dbms_cnxn(
         case "mysql" | "postgresql":
 
             flav = "mysql+pymysql" if dbms == "mysql" else "postgresql"
-            port = 3306 if dbms == "mysql" else 5432
+            if not port:
+                port = 3306 if dbms == "mysql" else 5432
 
             cnxn_str = f"{flav}://{uid}:{pwd}@{server}:{port}"
             cnxn_str += f"/{database}" if database else ""
+
+            if trust:
+                trust_str = (
+                    "ssl_verify_cert=False" if flav == "mysql+pymysql"
+                    else "ssl_disabled=True"
+                )
+
+                cnxn_str += f"?{trust_str}"
 
             engine = sa.create_engine(
                 cnxn_str,
@@ -206,11 +221,6 @@ def dbms_writer(
             Default = "dbo".
         **if_exists (String): Behaviour if the table already exists.
             Default = "replace".
-        **bcp (Boolean): If True, attempt to use the BCP utility to write out
-            data. SQL Server only. Default = False.
-        **fallback (Boolean): When using bcp, if True, and BCP returns a
-            DataError, write the data out using a SQLAlchemy Connection
-            object. Default = False.
 
     Returns
         None.
@@ -218,42 +228,12 @@ def dbms_writer(
 
     schema = kwargs.get("schema", "dbo")
     if_exists = kwargs.get("if_exists", "replace")
-    bcp = kwargs.get("bcp", False)
-    fallback = kwargs.get("fallback", False)
 
-    cnxn = cnxn_engine.connect()
-
-    pandas_func = (
-        lambda: df.to_sql(
+    with cnxn_engine.connect() as cnxn:
+        df.to_sql(
             table_name,
             cnxn,
             schema=schema,
             index=False,
             if_exists=if_exists,
         )
-    )
-
-    if bcp:
-
-        creds = SqlCreds.from_engine(cnxn_engine)
-
-        try:
-            to_sql(
-                df,
-                table_name,
-                creds,
-                schema=schema,
-                index=False,
-                if_exists=if_exists,
-            )
-
-        except DataError as e:
-
-            if fallback:
-                pandas_func()
-
-            else:
-                raise Exception(e)
-
-    else:
-        pandas_func()

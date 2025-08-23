@@ -18,91 +18,93 @@ def dbms_cnxn(
     """
     Returns a SQLAlchemy Engine object.
 
-    Creates and returns an MSSQL Server SQLAlchemy Engine object from given
-    connection details.
+    Creates and returns a SQLAlchemy Engine object from given connection
+    details, using ODBC connection strings encoded with
+    urllib.parse.quote_plus.
 
     Args:
         dbms (String): the DBMS flavour, accepted forms are:
             - mssql
             - mysql (use this for MariaDB also)
             - postgresql
-        server (String): the connection string or IP address for server
-            instance.
+        server (String): the connection string or IP address for the instance.
         uid (String): the username for connecting to server instance.
         pwd (String): the corresponding password for the given username.
-        **port (Integer): port to connect to dbms over. If none given the
-            default for each supported dbms type will be used.
-        **driver (String): details of the ODBC driver installed on the codes
-            host system, if using mssql.
-            Default = ODBC Driver 18 for SQL Server.
-        **database (String): name of the database, if connecting to a specific
-            database on the server instance. Default = no database.
+        **port (Integer): port to connect to dbms over. Defaults per dbms type.
+        **driver (String): details of the ODBC driver installed on the host.
+            - mssql default: ODBC Driver 18 for SQL Server
+            - mysql default: MySQL ODBC 8.0 Driver
+            - postgresql default: PostgreSQL Unicode
+        **database (String): database name. Default = no database.
         **trust (Boolean): Trust the server certificate. Default = False.
 
     Returns:
         Engine: A SQLAlchemy Engine object.
     """
 
-    port = kwargs.get("port", None)
-    driver = kwargs.get("driver", "ODBC Driver 18 for SQL Server")
     database = kwargs.get("database", "")
+    port = kwargs.get("port")
     trust = kwargs.get("trust", False)
 
-    match dbms:
+    defaults = {
+        "mssql": {"driver": "ODBC Driver 18 for SQL Server", "port": 1433},
+        "mysql": {"driver": "MySQL ODBC 8.0 Driver", "port": 3306},
+        "postgresql": {"driver": "PostgreSQL Unicode", "port": 5432},
+    }
 
-        case "mssql":
+    if dbms not in defaults:
+        raise ValueError(f"Unsupported dbms: {dbms}")
 
-            if not port:
-                port = 1433
+    driver = kwargs.get("driver", defaults[dbms]["driver"])
+    port = port or defaults[dbms]["port"]
 
-            trust_str = "Yes" if trust else "No"
+    cnxn_params = {
+        "DRIVER": driver,
+        "SERVER": f"{server},{port}" if dbms == "mssql" else server,
+        "PORT": "" if dbms == "mssql" else port,
+        "UID": uid,
+        "PWD": pwd,
+        "DATABASE": database,
+    }
 
-            cnxn_str = (
-                f"DRIVER={driver};"
-                f"SERVER={server},{port};"
-                f"UID={uid};"
-                f"PWD={pwd};"
-                f"DATABASE={database};"
-                f"MARS_Connection=Yes;"
-                f"TrustServerCertificate={trust_str};"
-            )
+    if dbms == "mssql":
+        cnxn_params["MARS_Connection"] = "Yes"
+        cnxn_params["TrustServerCertificate"] = "Yes" if trust else "No"
 
-            quoted_cnxn_str = urllib.parse.quote_plus(cnxn_str)
+    elif dbms == "mysql":
+        if trust:
+            cnxn_params["ssl_verify_cert"] = "0"
 
-            engine = sa.create_engine(
-                f"mssql+pyodbc:///?odbc_connect={quoted_cnxn_str}",
-                connect_args={"autocommit": True},
-                fast_executemany=True,
-            )
+    elif dbms == "postgresql":
+        cnxn_params["sslmode"] = "disable" if trust else "require"
 
-        case "mysql" | "postgresql":
+    cnxn_str = ";".join(
+        f"{k}={v}" for k, v in cnxn_params.items() if v not in (None, "")
+    ) + ";"
 
-            flav = "mysql+pymysql" if dbms == "mysql" else "postgresql"
-            if not port:
-                port = 3306 if dbms == "mysql" else 5432
+    quoted_cnxn_str = urllib.parse.quote_plus(cnxn_str)
 
-            cnxn_str = f"{flav}://{uid}:{pwd}@{server}:{port}"
-            cnxn_str += f"/{database}" if database else ""
+    url_prefix = {
+        "mssql": "mssql+pyodbc",
+        "mysql": "mysql+pyodbc",
+        "postgresql": "postgresql+pyodbc",
+    }[dbms]
 
-            if trust:
-                trust_str = (
-                    "ssl_verify_cert=False" if flav == "mysql+pymysql"
-                    else "ssl_disabled=True"
-                )
+    engine_kwargs = {
+        "connect_args": (
+            {"autocommit": True}
+            if dbms in ("mysql", "mssql")
+            else {}
+        ),
+    }
 
-                cnxn_str += f"?{trust_str}"
+    if dbms == "mssql":
+        engine_kwargs["fast_executemany"] = True
 
-            engine = sa.create_engine(
-                cnxn_str,
-                connect_args={"autocommit": True} if dbms == "mysql" else "",
-            )
-
-        case _:
-
-            raise ValueError("""
-                Unacceptable argument given for dbms,
-                run help(dbms_cnxn) for more information.
-            """)
+    engine = sa.create_engine(
+        f"{url_prefix}:///?odbc_connect={quoted_cnxn_str}",
+        **engine_kwargs
+    )
 
     return engine
 

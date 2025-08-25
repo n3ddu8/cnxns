@@ -4,6 +4,11 @@
 
 cnxns abstracts the complexity of working with a variety of data systems.
 
+## Supported Systems
+### DBMS
+- Microsoft SQL Server
+- MySQL/MariaDB
+
 ## Example Usage
 
 ```python
@@ -29,3 +34,7 @@ db.dbms_writer(
     if_exists="append",
 )
 ```
+
+## Dependencies
+- ODBC Driver X for SQL Server (tested with 18)
+- MySQL ODBC X driver (tested with 9.4)

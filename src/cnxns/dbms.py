@@ -33,7 +33,6 @@ def dbms_cnxn(
         **driver (String): details of the ODBC driver installed on the host.
             - mssql default: ODBC Driver 18 for SQL Server
             - mysql default: MySQL ODBC 9.4 Driver
-            - postgresql default: PostgreSQL Unicode
         **database (String): database name. Default = no database.
         **trust (Boolean): Trust the server certificate. Default = False.
 

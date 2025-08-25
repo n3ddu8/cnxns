@@ -9,6 +9,15 @@ cnxns abstracts the complexity of working with a variety of data systems.
 - Microsoft SQL Server
 - MySQL/MariaDB
 
+## Getting started
+
+```shell
+pip install git+https://github.com/n3ddu8/cnxns.git#egg=cnxns
+python
+from cnxns import dbms
+help(dbms)
+```
+
 ## Example Usage
 
 ```python

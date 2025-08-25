@@ -26,7 +26,6 @@ def dbms_cnxn(
         dbms (String): the DBMS flavour, accepted forms are:
             - mssql
             - mysql (use this for MariaDB also)
-            - postgresql
         server (String): the connection string or IP address for the instance.
         uid (String): the username for connecting to server instance.
         pwd (String): the corresponding password for the given username.
@@ -49,7 +48,6 @@ def dbms_cnxn(
     defaults = {
         "mssql": {"driver": "ODBC Driver 18 for SQL Server", "port": 1433},
         "mysql": {"driver": "MySQL ODBC 9.4 Driver", "port": 3306},
-        "postgresql": {"driver": "PostgreSQL Unicode", "port": 5432},
     }
 
     if dbms not in defaults:
@@ -75,9 +73,6 @@ def dbms_cnxn(
         if trust:
             cnxn_params["ssl_verify_cert"] = "0"
 
-    elif dbms == "postgresql":
-        cnxn_params["sslmode"] = "disable" if trust else "require"
-
     cnxn_str = ";".join(
         f"{k}={v}" for k, v in cnxn_params.items() if v not in (None, "")
     ) + ";"
@@ -87,7 +82,6 @@ def dbms_cnxn(
     url_prefix = {
         "mssql": "mssql+pyodbc",
         "mysql": "mysql+pyodbc",
-        "postgresql": "postgresql+pyodbc",
     }[dbms]
 
     engine_kwargs = {

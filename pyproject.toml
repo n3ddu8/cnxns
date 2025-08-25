@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools >= 75.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cnxns"
+version = "0.0.1"
+authors = [
+  { name="n3ddu8", email="n3ddu8@proton.me" },
+]
+description = "Wrappers for connecting to data systems"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+dependencies = [
+    "pyodbc>=5.2.0",
+    "sqlalchemy>=2.0.43",
+    "pandas>=2.3.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/n3ddu8/cnxns"
+Issues = "https://github.com/n3ddu8/cnxns/issues"

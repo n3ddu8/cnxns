@@ -33,7 +33,7 @@ def dbms_cnxn(
         **port (Integer): port to connect to dbms over. Defaults per dbms type.
         **driver (String): details of the ODBC driver installed on the host.
             - mssql default: ODBC Driver 18 for SQL Server
-            - mysql default: MySQL ODBC 8.0 Driver
+            - mysql default: MySQL ODBC 9.4 Driver
             - postgresql default: PostgreSQL Unicode
         **database (String): database name. Default = no database.
         **trust (Boolean): Trust the server certificate. Default = False.
@@ -48,7 +48,7 @@ def dbms_cnxn(
 
     defaults = {
         "mssql": {"driver": "ODBC Driver 18 for SQL Server", "port": 1433},
-        "mysql": {"driver": "MySQL ODBC 8.0 Driver", "port": 3306},
+        "mysql": {"driver": "MySQL ODBC 9.4 Driver", "port": 3306},
         "postgresql": {"driver": "PostgreSQL Unicode", "port": 5432},
     }
 
@@ -126,7 +126,7 @@ def dbms_reader(
         **table_name (String): A table to return. Must provide either a query
             or table_name. Default = None.
         **schema (String): A schema for the table_name. Ignored if a query is
-            provided. Default = dbo.
+            provided. Default = None.
         **columns (List[String]): A list of columns to return from the given
             table_name. Ignored if a query is provided. Default = *.
 
@@ -136,7 +136,7 @@ def dbms_reader(
 
     query = kwargs.get("query", None)
     table_name = kwargs.get("table_name", None)
-    schema = kwargs.get("schema", "dbo")
+    schema = kwargs.get("schema", None)
     val = kwargs.get("columns")
     columns = ",".join(val) if isinstance(val, list) else "*"
 
@@ -169,7 +169,7 @@ def dbms_read_chunks(
         **table_name (String): A table to return. Must provide either a query
             or table_name. Default = None.
         **schema (String): A schema for the table_name. Ignored if a query is
-            provided. Default = dbo.
+            provided. Default = None.
         **columns (List[String]): A list of columns to return from the given
             table_name. Ignored if a query is provided. Default = *.
         **chunksize (Integer): The size of each chunk of data to read-in.
@@ -182,15 +182,20 @@ def dbms_read_chunks(
 
     query = kwargs.get("query", None)
     table_name = kwargs.get("table_name", None)
-    schema = kwargs.get("schema", "dbo")
+    schema = kwargs.get("schema", None)
     val = kwargs.get("columns")
     columns = ",".join(val) if isinstance(val, list) else "*"
     chunksize = kwargs.get("chunksize", None)
 
+    if not schema:
+        table = table_name
+    else:
+        table = f"{schema}.{table_name}"
+
     if not query:
         query = f"""
             SELECT {columns}
-              FROM {schema}.{table_name}
+              FROM {table}
         """
 
     if chunksize:
@@ -222,7 +227,7 @@ def dbms_writer(
         schema (String): The schema of the table to be written to.
         table_name (String): The table to be written to.
         **schema (String): The schema of the table to be written to.
-            Default = "dbo".
+            Default = None.
         **if_exists (String): Behaviour if the table already exists.
             Default = "replace".
 
@@ -230,7 +235,7 @@ def dbms_writer(
         None.
     """
 
-    schema = kwargs.get("schema", "dbo")
+    schema = kwargs.get("schema", None)
     if_exists = kwargs.get("if_exists", "replace")
 
     with cnxn_engine.connect() as cnxn:

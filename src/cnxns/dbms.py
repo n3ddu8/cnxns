@@ -185,7 +185,7 @@ def dbms_read_chunks(
     else:
         table = f"{schema}.{table_name}"
 
-    if not query:
+    if query is None:
         query = f"""
             SELECT {columns}
               FROM {table}

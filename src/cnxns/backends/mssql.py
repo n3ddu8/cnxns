@@ -1,6 +1,6 @@
 """Microsoft SQL Server backend implementation."""
 import urllib.parse
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 try:
     import pyodbc

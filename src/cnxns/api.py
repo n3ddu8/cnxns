@@ -1,5 +1,5 @@
 """Public API for cnxns library."""
-from typing import Any, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 from urllib.parse import urlparse
 
 from .adapters.pandas_adapter import PandasAdapter
@@ -9,6 +9,30 @@ from .backends.mysql import connect_mysql
 from .backends.postgresql import connect_postgresql
 from .core.protocols import Backend
 from .core.types import RowIterator
+
+
+# Backend registry - allows external backends to register
+BACKENDS: Dict[str, Callable] = {
+    'mssql': connect_mssql,
+    'mysql': connect_mysql,
+    'postgresql': connect_postgresql,
+    'postgres': connect_postgresql,  # Alias
+}
+
+
+def register_backend(scheme: str, factory: Callable[..., Backend]) -> None:
+    """
+    Register a custom backend factory.
+    
+    Args:
+        scheme: URL scheme (e.g., 'sqlite', 'mongodb')
+        factory: Callable that creates backend instances
+        
+    Example:
+        >>> register_backend('sqlite', connect_sqlite)
+        >>> conn = cnxn('sqlite:///path/to/db.sqlite')
+    """
+    BACKENDS[scheme] = factory
 
 
 def cnxn(
@@ -33,6 +57,10 @@ def cnxn(
         >>> conn = cnxn('mssql://localhost/dev', uid='sa', pwd='password')
         >>> conn = cnxn('mysql://localhost:3306/mydb', uid='user', pwd='pass')
         >>> conn = cnxn('postgresql://localhost/db', uid='postgres', pwd='secret')
+        >>> 
+        >>> # Use as context manager
+        >>> with cnxn('mssql://localhost/db', uid='sa', pwd='pass') as conn:
+        ...     data = read(conn, table="users")
     """
     parsed = urlparse(url)
     
@@ -48,43 +76,77 @@ def cnxn(
     password = pwd or url_pass
     
     if not username or not password:
-        raise ValueError("Username and password are required")
-    
-    if scheme == "mssql":
-        return connect_mssql(
-            server=host,
-            uid=username,
-            pwd=password,
-            database=database,
-            port=port or 1433,
-            **kwargs,
-        )
-    
-    elif scheme == "mysql":
-        return connect_mysql(
-            server=host,
-            uid=username,
-            pwd=password,
-            database=database,
-            port=port or 3306,
-            **kwargs,
-        )
-    
-    elif scheme in ("postgresql", "postgres"):
-        return connect_postgresql(
-            host=host,
-            user=username,
-            password=password,
-            database=database,
-            port=port or 5432,
-            **kwargs,
-        )
-    
-    else:
         raise ValueError(
-            f"Unsupported scheme: {scheme}. "
-            f"Supported: mssql, mysql, postgresql"
+            "Username and password are required. "
+            "Provide via parameters or in URL: scheme://user:pass@host/db"
         )
+    
+    if scheme not in BACKENDS:
+        available = ", ".join(sorted(BACKENDS.keys()))
+        raise ValueError(
+            f"Unsupported scheme: '{scheme}'. "
+            f"Supported: {available}"
+        )
+    
+    factory = BACKENDS[scheme]
+    
+    # Map common parameters
+    common_params = {
+        'uid': username,
+        'pwd': password,
+        'database': database,
+    }
+    
+    # Merge with backend-specific kwargs
+    params = {**common_params, **kwargs}
+    
+    # Handle backend-specific parameter names
+    if scheme in ('postgresql', 'postgres'):
+        params = {
+            'host': host,
+            'user': username,
+            'password': password,
+            'database': database,
+            'port': port or 5432,
+            **kwargs
+        }
+    elif scheme == 'mssql':
+        params = {
+            'server': host,
+            'uid': username,
+            'pwd': password,
+            'database': database,
+            'port': port or 1433,
+            **kwargs
+        }
+    elif scheme == 'mysql':
+        params = {
+            'server': host,
+            'uid': username,
+            'pwd': password,
+            'database': database,
+            'port': port or 3306,
+            **kwargs
+        }
+    
+    return factory(**params)
+
+
+def _detect_data_format(data: Any) -> Optional[str]:
+    """Auto-detect data format from type."""
+    type_name = type(data).__name__
+    module_name = type(data).__module__
+    
+    # Check for pandas DataFrame
+    if module_name.startswith('pandas') and type_name == 'DataFrame':
+        return 'pandas'
+    
+    # Check for Spark DataFrame
+    if module_name.startswith('pyspark') and type_name == 'DataFrame':
+        return 'spark'
+    
+    # Iterator or sequence of dicts
+    return None
 
 
 def read(
@@ -112,6 +174,7 @@ def read(
         
     Returns:
         Iterator of row dicts (if format=None), or framework-specific dataframe
+        If chunk_size is provided with format='pandas', yields DataFrames in chunks
         
     Examples:
         >>> # Raw row iteration
@@ -125,9 +188,9 @@ def read(
         >>> spark_df = read(conn, query="SELECT * FROM users", 
         ...                 format="spark", spark_session=spark)
         
-        >>> # Streaming/chunked reads
-        >>> for chunk in read(conn, table="large_table", chunk_size=1000):
-        ...     process(chunk)
+        >>> # Streaming chunks as Pandas DataFrames
+        >>> for df_chunk in read(conn, table="large_table", chunk_size=10000, format="pandas"):
+        ...     process(df_chunk)  # Each chunk is a DataFrame
     """
     rows = connection.read(
         query=query,
@@ -142,17 +205,17 @@ def read(
     
     elif format == "pandas":
         adapter = PandasAdapter()
-        return adapter.from_rows(rows)
+        return adapter.from_rows(rows, chunk_size=chunk_size)
     
     elif format == "spark":
         spark_session = kwargs.get("spark_session")
         adapter = SparkAdapter(spark=spark_session)
-        return adapter.from_rows(rows)
+        return adapter.from_rows(rows, chunk_size=chunk_size)
     
     else:
         raise ValueError(
-            f"Unsupported format: {format}. "
-            f"Supported: pandas, spark, or None"
+            f"Unsupported format: '{format}'. "
+            f"Supported: 'pandas', 'spark', or None"
         )
 
 
@@ -174,18 +237,28 @@ def write(
         schema: Schema name (for databases with schema support)
         if_exists: Behavior if table exists ('replace', 'append', 'fail')
         format: Format of input data ('pandas', 'spark', or None for raw rows)
+                If None, auto-detects from data type
         
     Examples:
         >>> # Write from row iterator
         >>> rows = [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}]
         >>> write(conn, rows, table="users")
         
-        >>> # Write from Pandas DataFrame
-        >>> write(conn, df, table="users", format="pandas")
+        >>> # Write from Pandas DataFrame (auto-detected)
+        >>> write(conn, df, table="users")
         
-        >>> # Write from PySpark DataFrame
-        >>> write(conn, spark_df, table="users", schema="staging", format="spark")
+        >>> # Write from PySpark DataFrame (auto-detected)
+        >>> write(conn, spark_df, table="users", schema="staging")
+        
+        >>> # Explicit format
+        >>> write(conn, df, table="users", format="pandas", if_exists="append")
     """
+    # Auto-detect format if not specified
+    if format is None:
+        detected = _detect_data_format(data)
+        if detected:
+            format = detected
+    
     if format == "pandas":
         adapter = PandasAdapter()
         rows = adapter.to_rows(data)
@@ -199,8 +272,8 @@ def write(
     
     else:
         raise ValueError(
-            f"Unsupported format: {format}. "
-            f"Supported: pandas, spark, or None"
+            f"Unsupported format: '{format}'. "
+            f"Supported: 'pandas', 'spark', or None"
         )
     
     connection.write(

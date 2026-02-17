@@ -1,5 +1,7 @@
 """MySQL/MariaDB backend implementation."""
 import urllib.parse
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Iterator, Optional
 
 try:
@@ -13,6 +15,10 @@ from .sql_base import SQLBackend
 
 class MySQLBackend(SQLBackend):
     """Backend for MySQL and MariaDB."""
+    
+    def _quote_identifier(self, identifier: str) -> str:
+        """Quote identifier using MySQL style (backticks)."""
+        return f"`{identifier}`"
     
     def _execute_read(
         self,
@@ -57,7 +63,12 @@ class MySQLBackend(SQLBackend):
         if_exists: str,
     ) -> None:
         """Execute write operation using pyodbc."""
-        full_table = f"{schema}.{table}" if schema else table
+        # Validate identifiers
+        self._validate_identifier(table, "table name")
+        if schema:
+            self._validate_identifier(schema, "schema name")
+        
+        full_table = f"{self._quote_identifier(schema)}.{self._quote_identifier(table)}" if schema else self._quote_identifier(table)
         
         data_iter = iter(data)
         first_row = next(data_iter, None)
@@ -66,6 +77,8 @@ class MySQLBackend(SQLBackend):
             return
         
         columns = list(first_row.keys())
+        for col in columns:
+            self._validate_identifier(col, "column name")
         
         cursor = self._connection.cursor()
         
@@ -73,9 +86,14 @@ class MySQLBackend(SQLBackend):
             if if_exists == "replace":
                 cursor.execute(f"DROP TABLE IF EXISTS {full_table}")
             elif if_exists == "fail":
+                schema_filter = f"AND table_schema = ?" if schema else ""
+                params = [table]
+                if schema:
+                    params.append(schema)
                 cursor.execute(
                     f"SELECT 1 FROM information_schema.tables "
-                    f"WHERE table_name = '{table}' LIMIT 1"
+                    f"WHERE table_name = ? {schema_filter} LIMIT 1",
+                    params
                 )
                 if cursor.fetchone():
                     raise ValueError(f"Table {full_table} already exists")
@@ -99,7 +117,7 @@ class MySQLBackend(SQLBackend):
         col_defs = []
         for col, val in sample_row.items():
             sql_type = self._infer_sql_type(val)
-            col_defs.append(f"`{col}` {sql_type}")
+            col_defs.append(f"{self._quote_identifier(col)} {sql_type}")
         
         create_sql = f"CREATE TABLE {table} ({', '.join(col_defs)})"
         cursor.execute(create_sql)
@@ -108,16 +126,29 @@ class MySQLBackend(SQLBackend):
         """Infer SQL type from Python value."""
         if value is None:
             return "TEXT"
+        # Check bool BEFORE int
         elif isinstance(value, bool):
             return "BOOLEAN"
         elif isinstance(value, int):
-            return "BIGINT"
+            if -2147483648 <= value <= 2147483647:
+                return "INT"
+            else:
+                return "BIGINT"
         elif isinstance(value, float):
             return "DOUBLE"
+        elif isinstance(value, Decimal):
+            return "DECIMAL(38, 10)"
         elif isinstance(value, str):
-            return "TEXT"
+            if len(value) <= 255:
+                return f"VARCHAR({max(len(value), 255)})"
+            else:
+                return "TEXT"
         elif isinstance(value, (bytes, bytearray)):
             return "BLOB"
+        elif isinstance(value, datetime):
+            return "DATETIME"
+        elif isinstance(value, date):
+            return "DATE"
         else:
             return "TEXT"
     
@@ -131,14 +162,14 @@ class MySQLBackend(SQLBackend):
     ) -> None:
         """Insert rows using parameterized query."""
         placeholders = ", ".join(["?"] * len(columns))
-        col_names = ", ".join([f"`{col}`" for col in columns])
+        col_names = ", ".join([self._quote_identifier(col) for col in columns])
         
         insert_sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
         
-        batch = [[first_row[col] for col in columns]]
+        batch = [[first_row.get(col) for col in columns]]
         
         for row in remaining:
-            batch.append([row[col] for col in columns])
+            batch.append([row.get(col) for col in columns])
             
             if len(batch) >= 1000:
                 cursor.executemany(insert_sql, batch)

@@ -3,9 +3,11 @@ from typing import Any, Iterator, Optional
 
 try:
     from pyspark.sql import SparkSession, Row as SparkRow
+    import pyspark.sql.functions as F
 except ImportError:
     SparkSession = None
     SparkRow = None
+    F = None
 
 from ..core.types import Row, RowIterator
 
@@ -28,12 +30,13 @@ class SparkAdapter:
         
         self._spark = spark or SparkSession.builder.getOrCreate()
     
-    def from_rows(self, rows: RowIterator) -> Any:
+    def from_rows(self, rows: RowIterator, chunk_size: Optional[int] = None) -> Any:
         """
         Convert row iterator to Spark DataFrame.
         
         Args:
             rows: Iterator of row dictionaries
+            chunk_size: Ignored for Spark (no chunking needed)
             
         Returns:
             pyspark.sql.DataFrame
@@ -51,11 +54,13 @@ class SparkAdapter:
         """
         Convert Spark DataFrame to row iterator.
         
+        Uses toLocalIterator() to avoid collecting entire DF to driver.
+        
         Args:
             data: pyspark.sql.DataFrame
             
         Returns:
             Iterator of row dictionaries
         """
-        for row in data.collect():
+        for row in data.toLocalIterator():
             yield row.asDict()

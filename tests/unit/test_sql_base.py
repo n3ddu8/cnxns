@@ -17,6 +17,10 @@ class MockSQLBackend(SQLBackend):
         self.write_calls = []
         self.close_calls = []
     
+    def _quote_identifier(self, identifier: str) -> str:
+        """Quote identifier for testing."""
+        return f'"{identifier}"'
+    
     def _execute_read(self, query: str, chunk_size: Optional[int]) -> RowIterator:
         self.read_calls.append((query, chunk_size))
         yield {"id": 1, "name": "test"}
@@ -45,6 +49,16 @@ def test_capabilities():
     assert Capability.BATCH_WRITE in caps
 
 
+def test_context_manager():
+    """Test backend works as context manager."""
+    backend = MockSQLBackend()
+    
+    with backend as conn:
+        assert conn is backend
+    
+    assert len(backend.close_calls) == 1
+
+
 def test_read_with_query():
     """Test reading with explicit query."""
     backend = MockSQLBackend()
@@ -64,7 +78,7 @@ def test_read_with_table():
     list(backend.read(table="users"))
     
     assert len(backend.read_calls) == 1
-    assert "FROM users" in backend.read_calls[0][0]
+    assert 'FROM "users"' in backend.read_calls[0][0]
 
 
 def test_read_with_schema():
@@ -73,7 +87,7 @@ def test_read_with_schema():
     
     list(backend.read(table="users", schema="public"))
     
-    assert "FROM public.users" in backend.read_calls[0][0]
+    assert 'FROM "public"."users"' in backend.read_calls[0][0]
 
 
 def test_read_with_columns():
@@ -82,7 +96,7 @@ def test_read_with_columns():
     
     list(backend.read(table="users", columns=["id", "name"]))
     
-    assert "SELECT id, name" in backend.read_calls[0][0]
+    assert 'SELECT "id", "name"' in backend.read_calls[0][0]
 
 
 def test_read_requires_query_or_table():
@@ -91,6 +105,14 @@ def test_read_requires_query_or_table():
     
     with pytest.raises(ValueError, match="Must provide either"):
         list(backend.read())
+
+
+def test_read_validates_identifiers():
+    """Test that invalid identifiers are rejected."""
+    backend = MockSQLBackend()
+    
+    with pytest.raises(ValueError, match="Invalid table name"):
+        list(backend.read(table="users; DROP TABLE users--"))
 
 
 def test_write_basic():

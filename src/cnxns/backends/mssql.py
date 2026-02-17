@@ -1,5 +1,7 @@
 """Microsoft SQL Server backend implementation."""
 import urllib.parse
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Iterator, Optional
 
 try:
@@ -13,6 +15,10 @@ from .sql_base import SQLBackend
 
 class MSSQLBackend(SQLBackend):
     """Backend for Microsoft SQL Server."""
+    
+    def _quote_identifier(self, identifier: str) -> str:
+        """Quote identifier using SQL Server style (square brackets)."""
+        return f"[{identifier}]"
     
     def _execute_read(
         self,
@@ -57,7 +63,12 @@ class MSSQLBackend(SQLBackend):
         if_exists: str,
     ) -> None:
         """Execute write operation using pyodbc."""
-        full_table = f"{schema}.{table}" if schema else table
+        # Validate identifiers
+        self._validate_identifier(table, "table name")
+        if schema:
+            self._validate_identifier(schema, "schema name")
+        
+        full_table = f"{self._quote_identifier(schema)}.{self._quote_identifier(table)}" if schema else self._quote_identifier(table)
         
         data_iter = iter(data)
         first_row = next(data_iter, None)
@@ -66,6 +77,8 @@ class MSSQLBackend(SQLBackend):
             return
         
         columns = list(first_row.keys())
+        for col in columns:
+            self._validate_identifier(col, "column name")
         
         cursor = self._connection.cursor()
         
@@ -73,9 +86,11 @@ class MSSQLBackend(SQLBackend):
             if if_exists == "replace":
                 cursor.execute(f"DROP TABLE IF EXISTS {full_table}")
             elif if_exists == "fail":
+                schema_filter = f"AND TABLE_SCHEMA = '{schema}'" if schema else "AND TABLE_SCHEMA = 'dbo'"
                 cursor.execute(
                     f"SELECT 1 FROM INFORMATION_SCHEMA.TABLES "
-                    f"WHERE TABLE_NAME = '{table}'"
+                    f"WHERE TABLE_NAME = ? {schema_filter}",
+                    (table,)
                 )
                 if cursor.fetchone():
                     raise ValueError(f"Table {full_table} already exists")
@@ -99,7 +114,7 @@ class MSSQLBackend(SQLBackend):
         col_defs = []
         for col, val in sample_row.items():
             sql_type = self._infer_sql_type(val)
-            col_defs.append(f"[{col}] {sql_type}")
+            col_defs.append(f"{self._quote_identifier(col)} {sql_type}")
         
         create_sql = f"CREATE TABLE {table} ({', '.join(col_defs)})"
         cursor.execute(create_sql)
@@ -108,16 +123,29 @@ class MSSQLBackend(SQLBackend):
         """Infer SQL type from Python value."""
         if value is None:
             return "NVARCHAR(MAX)"
+        # Check bool BEFORE int (bool is subclass of int)
         elif isinstance(value, bool):
             return "BIT"
         elif isinstance(value, int):
-            return "BIGINT"
+            if -2147483648 <= value <= 2147483647:
+                return "INT"
+            else:
+                return "BIGINT"
         elif isinstance(value, float):
             return "FLOAT"
+        elif isinstance(value, Decimal):
+            return "DECIMAL(38, 10)"
         elif isinstance(value, str):
-            return "NVARCHAR(MAX)"
+            if len(value) <= 4000:
+                return f"NVARCHAR({max(len(value), 255)})"
+            else:
+                return "NVARCHAR(MAX)"
         elif isinstance(value, (bytes, bytearray)):
             return "VARBINARY(MAX)"
+        elif isinstance(value, datetime):
+            return "DATETIME2"
+        elif isinstance(value, date):
+            return "DATE"
         else:
             return "NVARCHAR(MAX)"
     
@@ -131,14 +159,14 @@ class MSSQLBackend(SQLBackend):
     ) -> None:
         """Insert rows using parameterized query."""
         placeholders = ", ".join(["?"] * len(columns))
-        col_names = ", ".join([f"[{col}]" for col in columns])
+        col_names = ", ".join([self._quote_identifier(col) for col in columns])
         
         insert_sql = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
         
         batch = [[first_row[col] for col in columns]]
         
         for row in remaining:
-            batch.append([row[col] for col in columns])
+            batch.append([row.get(col) for col in columns])
             
             if len(batch) >= 1000:
                 cursor.executemany(insert_sql, batch)

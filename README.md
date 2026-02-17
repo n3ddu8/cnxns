@@ -1,6 +1,6 @@
 <a name="readme-top"></a>
 
-<h1 align="center">THIS PROJECT IS IN ALPHA AND MAY INTRODUCE BREAKING CHANGES</h1>
+<h1 align="center">⚠️ THIS PROJECT IS IN ALPHA - v0.1.0 IS A COMPLETE REWRITE</h1>
 
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
@@ -17,7 +17,9 @@
 <h3 align="center">Cnxns</h3>
 
   <p align="center">
-    A lightweight, extensible library that simplifies interaction with heterogeneous data systems. It standardises connections, authentication, and data transfer into consistent, Pandas‑friendly workflows, enabling seamless integration across databases and APIs without the overhead of system‑specific code.
+    A lightweight, extensible library for interacting with data systems.
+    <br />
+    Minimal API • Framework Neutral • Streaming by Default
     <br />
     <a href="https://github.com/philipbudden/cnxns/issues">Report Bug</a>
     ·
@@ -29,180 +31,317 @@
 <details>
   <summary>Table of Contents</summary>
   <ol>
-    <li>
-      <a href="#about-the-project">About the Project</a>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-    </li>
-    <li>
-      <a href="#usage">Usage</a>
-      <ul>
-        <a href="#dbms">dbms</a>
-        <ul>
-          <li><a href="#supports">Supports</a></li>
-          <li><a href="#pre-requisites">Pre-requisites</a></li>
-          <li><a href="#example">Example</a></li>
-        </ul>
-      </ul>
-      <ul>
-        <a href="#m365">m365</a>
-        <ul>
-          <li><a href="#supports">Supports</a></li>
-          <li><a href="#pre-requisites">Pre-requisites</a></li>
-          <li><a href="#example">Example</a></li>
-        </ul>
-      </ul>
-    </li>
+    <li><a href="#about">About</a></li>
+    <li><a href="#installation">Installation</a></li>
+    <li><a href="#quick-start">Quick Start</a></li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#architecture">Architecture</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
 </details>
 
-<!-- ABOUT THE PROJECT -->
-## About the Project
+## About
 
-This library provides a unified interface for interacting with diverse data systems, eliminating the need to manage the intricacies of individual platforms. By abstracting connection handling, authentication, data retrieval, and writing operations into simple, consistent functions, it enables developers and data engineers to focus on analysis and integration rather than boilerplate code.
+Cnxns provides a unified interface for reading and writing data across diverse systems. It abstracts connection management, authentication, and data transfer into three simple functions:
 
-Whether working with traditional databases or modern API endpoints, the library standardises workflows into familiar patterns such as reading into Pandas DataFrames, chunked processing for large datasets, and seamless write‑back operations. Built with extensibility in mind, new data systems can be added without disrupting existing usage, ensuring the library evolves alongside your environment.
+- **`cnxn`** — Create a connection to a data system
+- **`read`** — Read data from a connection  
+- **`write`** — Write data to a connection
 
-Designed for clarity, maintainability, and scalability, this library is a practical foundation for projects that demand reliable access to heterogeneous data sources.
+### Design Principles
+
+- **Minimal API**: Three functions cover all use cases
+- **Framework Neutral**: Core library has zero dependencies
+- **Streaming by Default**: Designed for large datasets with bounded memory
+- **Capability-Based**: Backends advertise what they support, no false uniformity
+- **Adapter Pattern**: Dataframe libraries (Pandas, PySpark, Polars) are optional add-ons
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+## Installation
 
-<!-- GETTING STARTED -->
-## Getting Started
-```shell
+### Core Library
+```bash
 pip install cnxns
 ```
 
+### With Backend Support
+```bash
+# SQL Server
+pip install cnxns[mssql]
+
+# MySQL/MariaDB
+pip install cnxns[mysql]
+
+# PostgreSQL
+pip install cnxns[postgres]
+```
+
+### With Framework Support
+```bash
+# Pandas
+pip install cnxns[pandas]
+
+# PySpark
+pip install cnxns[spark]
+
+# Everything
+pip install cnxns[all]
+```
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+## Quick Start
 
-<!-- USAGE EXAMPLES -->
+### Basic Usage (No Dataframe Library Required)
+
+```python
+from cnxns import cnxn, read, write
+
+# Connect
+conn = cnxn('mssql://localhost/mydb', uid='sa', pwd='password')
+
+# Read as row dictionaries
+for row in read(conn, query="SELECT * FROM users"):
+    print(row)  # {'id': 1, 'name': 'Alice', ...}
+
+# Write from row dictionaries  
+data = [
+    {'id': 1, 'name': 'Alice'},
+    {'id': 2, 'name': 'Bob'},
+]
+write(conn, data, table="users")
+
+conn.close()
+```
+
+### With Pandas
+
+```python
+from cnxns import cnxn, read, write
+
+conn = cnxn('mysql://localhost/mydb', uid='user', pwd='pass')
+
+# Read into DataFrame
+df = read(conn, table="sales", schema="analytics", format="pandas")
+
+# Write from DataFrame
+write(conn, df, table="sales_backup", format="pandas", if_exists="replace")
+```
+
+### With PySpark
+
+```python
+from cnxns import cnxn, read, write
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.getOrCreate()
+conn = cnxn('postgresql://localhost/warehouse', uid='postgres', pwd='secret')
+
+# Read into Spark DataFrame
+spark_df = read(
+    conn,
+    query="SELECT * FROM events WHERE date > '2024-01-01'",
+    format="spark",
+    spark_session=spark
+)
+
+# Write from Spark DataFrame
+write(conn, spark_df, table="events", schema="staging", format="spark")
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Usage
 
-### dbms
+### Connections
 
-The dbms module provides a streamlined interface for interacting with SQL-based data systems through SQLAlchemy. It abstracts connection setup, data ingestion, and write-back operations into concise, reusable functions that integrate seamlessly with Pandas. With built-in support for chunked reading and writing, it enables efficient handling of large datasets while maintaining clarity and consistency across varied database backends.
+Create connections using connection URLs:
 
-#### Supports
-
-- Microsoft SQL Server
-- MySQL/MariaDB
-
-#### Pre-requisites
-- Either:
-  - ODBC Driver X for SQL Server (tested with 18)
-  - MySQL ODBC X driver (tested with 9.4)
-
-#### Example
 ```python
-from cnxns import dbms as db
+# SQL Server
+conn = cnxn('mssql://server/database', uid='user', pwd='pass')
+conn = cnxn('mssql://server:1433/db', uid='user', pwd='pass', trust_cert=True)
 
-e = db.dbms_cnxn(
-    dbms = "mssql",
-    server = "localhost",
-    uid = "sa",
-    pwd = "YourStrong@Passw0rd",
-    database = "dev",
-)
+# MySQL/MariaDB  
+conn = cnxn('mysql://host/database', uid='user', pwd='pass')
+conn = cnxn('mysql://host:3307/db', uid='user', pwd='pass')
 
-df = db.dbms_reader(
-    e,
-    query = "SELECT TOP(1000) * FROM myAwesomeTable",
-)
+# PostgreSQL
+conn = cnxn('postgresql://host/database', uid='user', pwd='pass')
+conn = cnxn('postgres://host:5433/db', uid='user', pwd='pass')
 
-print(df)
+# Credentials in URL
+conn = cnxn('mssql://user:pass@server/database')
+```
 
-for chunk in db.dbms_read_chunks(
-    e,
-    table_name = "myAwesomeTable",
-    chunksize = 1000,
-):
+### Reading Data
 
-  db.dbms_writer(
-      e,
-      df,
-      "myAwesomeTableSnapshot",
-      if_exists="append",
-  )
+**From Queries:**
+```python
+# Raw rows (no framework needed)
+rows = read(conn, query="SELECT id, name FROM users WHERE active = 1")
+for row in rows:
+    print(row)
+
+# As Pandas DataFrame
+df = read(conn, query="SELECT * FROM orders", format="pandas")
+
+# As PySpark DataFrame  
+spark_df = read(conn, query="SELECT * FROM events", format="spark", spark_session=spark)
+```
+
+**From Tables:**
+```python
+# Entire table
+rows = read(conn, table="users")
+
+# With schema (data warehouse pattern)
+rows = read(conn, table="customers", schema="ods_finance")
+
+# Select specific columns
+rows = read(conn, table="products", columns=["id", "name", "price"])
+```
+
+**Streaming/Chunking:**
+```python
+# Process large datasets in chunks (bounded memory)
+for chunk in read(conn, table="transactions", chunk_size=10000):
+    for row in chunk:
+        process(row)
+```
+
+### Writing Data
+
+```python
+# From row dictionaries
+data = [{'id': 1, 'value': 'test'}]
+write(conn, data, table="logs")
+
+# From Pandas DataFrame
+write(conn, df, table="results", format="pandas")
+
+# From PySpark DataFrame
+write(conn, spark_df, table="aggregates", format="spark")
+
+# With schema (data warehouse)
+write(conn, data, table="fact_sales", schema="dwh")
+
+# Control behavior if table exists
+write(conn, data, table="users", if_exists="append")   # append rows
+write(conn, data, table="users", if_exists="replace")  # drop and recreate (default)
+write(conn, data, table="users", if_exists="fail")     # raise error
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### m365
-The m365 module abstracts authentication and data access workflows for Microsoft 365 APIs, streamlining interactions with services like Graph and Dataverse. It handles token generation via MSAL and Azure AD app registration, enabling secure, reusable access patterns. With built-in support for chunked queries and JSON response handling, it simplifies integration into data pipelines and analytical workflows while maintaining flexibility across varied Microsoft 365 endpoints.
+## Architecture
 
-#### Supports
-- Dataverse REST API
-- Microsoft 365 Graph API
+### Core Design
 
-#### Pre-requisites
-- An application registered in Azure Active Directory. You will need:
-  - Tennant ID
-  - Client ID
-  - Client Secret
-
-#### Example
-```python
-from cnxns.api import m365
-
-result = m365.query_api(
-    client_id="A123",
-    client_secret="B234",
-    tenant_id="C345",
-    base_url="https://myamazingcompany.crm.dynamics.com",
-    api_url="api/data/v9.0",
-    query="/accounts?$select=accountid,versionnumber",
-    chunksize=1000,
-)
 ```
+
+  Public API: cnxn, read, write          │
+
+              ↓
+
+  Framework Adapters (optional)          │
+  • Pandas                               │
+  • PySpark                              │
+  • Polars (future)                      │
+
+              ↓
+
+  Core: Iterator[Mapping[str, Any]]      │
+  (framework-neutral row streams)        │
+
+              ↓
+
+  Backends (capability-based)            │
+  • MSSQL  • MySQL  • PostgreSQL         │
+
+```
+
+### Supported Backends
+
+| Backend | Streaming | Schemas | Transactions | Driver Required |
+|---------|-----------|---------|--------------|-----------------|
+| MSSQL   | ✅ | ✅ | ✅ | pyodbc + ODBC Driver 18 |
+| MySQL   | ✅ | ✅ | ✅ | pyodbc + MySQL ODBC 9.4 |
+| PostgreSQL | psycopg2 | | ✅ | ✅ | 
+
+### Supported Frameworks
+
+| Framework | Status | Install |
+|-----------|--------|---------|
+| Pandas    | ✅ Stable | `pip install cnxns[pandas]` |
+| PySpark   | ✅ Stable | `pip install cnxns[spark]` |
+| Polars    | 🚧 Planned | - |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+## Migration from v0.0.x
 
-<!-- CONTRIBUTING -->
+**v0.1.0 is a complete rewrite with breaking changes.**
+
+### Old API (v0.0.x)
+```python
+from cnxns import dbms
+
+engine = dbms.dbms_cnxn(dbms="mssql", server="localhost", ...)
+df = dbms.dbms_reader(engine, query="SELECT * FROM users")
+dbms.dbms_writer(engine, df, "users")
+```
+
+### New API (v0.1.0+)
+```python
+from cnxns import cnxn, read, write
+
+conn = cnxn('mssql://localhost/db', uid='user', pwd='pass')
+df = read(conn, query="SELECT * FROM users", format="pandas")
+write(conn, df, table="users", format="pandas")
+```
+
+**Key Changes:**
+- SQLAlchemy dependency removed
+- Pandas is now optional
+- Dynamics 365 support removed
+- Connection URLs instead of parameter dicts
+- Unified `read`/`write` instead of separate reader/writer functions
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are welcome! This project follows these principles:
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+1. **Minimal API** — Don't add public functions unless absolutely necessary
+2. **Framework Neutral** — Core must work without any dataframe library
+3. **Capability-Based** — Backends declare what they support
+4. **Streaming First** — Assume large datasets by default
+5. **Clear Boundaries** — Transport, representation, and consumption are separate
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+See [AGENTS.md](AGENTS.md) for detailed architectural guidance.
+
+### Development Setup
+
+```bash
+git clone https://github.com/philipbudden/cnxns
+cd cnxns
+pip install -e ".[dev]"
+pytest tests/
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
-<!-- LICENSE -->
 ## License
 
-Distributed under the MIT License. See `LICENSE.txt` for more information.
+Distributed under the MIT License. See `LICENSE` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-<!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
-
-* [SQLAlchemy](https://pypi.org/project/sqlalchemy/)
-* [msal](https://pypi.org/project/msal/)
-* [pandas](https://pypi.org/project/pandas/)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
 
 <!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 [contributors-shield]: https://img.shields.io/github/contributors/philipbudden/cnxns.svg?style=for-the-badge
 [contributors-url]: https://github.com/philipbudden/cnxns/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/philipbudden/cnxns.svg?style=for-the-badge
@@ -213,5 +352,3 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 [issues-url]: https://github.com/philipbudden/cnxns/issues
 [license-shield]: https://img.shields.io/github/license/philipbudden/cnxns.svg?style=for-the-badge
 [license-url]: https://github.com/philipbudden/cnxns/blob/main/LICENSE
-[linkedin-url]: https://www.linkedin.com/company/pobl-group
-[python-url]: https://www.python.org/

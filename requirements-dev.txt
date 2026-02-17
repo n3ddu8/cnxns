@@ -1,10 +1,10 @@
--r requirements.txt
-mypy
-pandas-stubs
-pre-commit
-setuptools
-sphinx
-sphinx-autodoc-typehints
-sphinx_rtd_theme
-types-python-dateutil
-types-requests
+pytest>=7.0.0
+pytest-cov>=4.0.0
+mypy>=1.0.0
+pre-commit>=3.0.0
+pandas-stubs>=2.0.0
+# Optional dependencies for testing
+pandas>=2.0.0
+pyodbc>=5.2.0
+psycopg2-binary>=2.9.0
+

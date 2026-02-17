@@ -1,4 +1,9 @@
-msal==1.20.0b1
-pandas>=2.3.2
-pyodbc>=5.2.0
-sqlalchemy>=2.0.43
+# Core library has no required dependencies
+# Install extras for specific backends/adapters:
+# pip install cnxns[mssql]
+# pip install cnxns[mysql]
+# pip install cnxns[postgres]
+# pip install cnxns[pandas]
+# pip install cnxns[spark]
+# pip install cnxns[all]
+

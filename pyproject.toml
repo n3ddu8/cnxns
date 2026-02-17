@@ -4,27 +4,86 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cnxns"
-version = "0.0.3"
+version = "0.1.0"
 authors = [
   { name="n3ddu8", email="n3ddu8@proton.me" },
 ]
-description = "Wrappers for connecting to data systems"
+description = "A lightweight library for interacting with data systems"
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
 
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+mssql = ["pyodbc>=5.2.0"]
+mysql = ["pyodbc>=5.2.0"]
+postgres = ["psycopg2-binary>=2.9.0"]
+pandas = ["pandas>=2.0.0"]
+spark = ["pyspark>=3.0.0"]
+all = [
     "pyodbc>=5.2.0",
-    "sqlalchemy>=2.0.43",
-    "pandas>=2.3.2",
-    "msal==1.20.0b1",
+    "psycopg2-binary>=2.9.0",
+    "pandas>=2.0.0",
+    "pyspark>=3.0.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+    "pandas-stubs>=2.0.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/philipbudden/cnxns"
 Issues = "https://github.com/philipbudden/cnxns/issues"
+Repository = "https://github.com/philipbudden/cnxns"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--cov=cnxns",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/cnxns"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
